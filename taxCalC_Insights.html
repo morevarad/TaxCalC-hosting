@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Real Income & Expense Visual Calculator</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 40px; background: #f9f9f9; }
+    h2 { color: #333; }
+    input, select, button {
+      padding: 8px; margin: 10px 5px;
+      font-size: 16px;
+    }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin-top: 20px;
+      background: #fff;
+    }
+    th, td {
+      border: 1px solid #ccc;
+      padding: 10px;
+      text-align: left;
+    }
+    th { background: #f0f0f0; }
+    .chart-container { max-width: 800px; margin-top: 40px; }
+  </style>
+</head>
+<body>
+<h2>Real Income Tax & Savings Visual Calculator</h2>
+<label for="income">Income:</label>
+<input type="number" id="income" value="800000">
+<label for="period">Period:</label>
+<select id="period">
+  <option value="annual">Annual</option>
+  <option value="monthly">Monthly</option>
+</select>
+<label for="regime">Tax Regime:</label>
+<select id="regime">
+  <option value="old">Old</option>
+  <option value="new">New</option>
+</select>
+<br>
+<label>Actual Monthly Expenses:</label>
+<input type="number" id="actualExpenses" value="35000">
+<label>Actual Monthly Savings:</label>
+<input type="number" id="actualSavings" value="10000">
+<button onclick="calculate()">Calculate</button>
+
+<table id="resultTable">
+  <thead><tr><th>Category</th><th>Amount (₹)</th></tr></thead>
+  <tbody></tbody>
+</table>
+
+<div class="chart-container">
+  <canvas id="pieChart"></canvas>
+  <canvas id="barChart" style="margin-top:40px;"></canvas>
+</div>
+
+<script>
+function calculateIncomeTax(income, regime) {
+  let tax = 0;
+  if (regime === 'old') {
+    if (income <= 250000) tax = 0;
+    else if (income <= 500000) tax = (income - 250000) * 0.05;
+    else if (income <= 1000000) tax = (250000 * 0.05) + (income - 500000) * 0.2;
+    else tax = (250000 * 0.05) + (500000 * 0.2) + (income - 1000000) * 0.3;
+  } else {
+    const slabs = [ [300000, 0], [300000, 0.05], [300000, 0.10], [300000, 0.15], [300000, 0.20], [300000, 0.25], [Infinity, 0.30] ];
+    let remaining = income;
+    for (let i = 0; i < slabs.length && remaining > 0; i++) {
+      const slabAmount = Math.min(slabs[i][0], remaining);
+      tax += slabAmount * slabs[i][1];
+      remaining -= slabAmount;
+    }
+  }
+  return tax * 1.04; // Including cess
+}
+
+function calculate() {
+  const period = document.getElementById('period').value;
+  const regime = document.getElementById('regime').value;
+  const incomeRaw = parseFloat(document.getElementById('income').value);
+  const actualExpenses = parseFloat(document.getElementById('actualExpenses').value);
+  const actualSavings = parseFloat(document.getElementById('actualSavings').value);
+  const tbody = document.querySelector("#resultTable tbody");
+  tbody.innerHTML = "";
+  if (isNaN(incomeRaw) || incomeRaw <= 0) return;
+
+  const income = period === 'monthly' ? incomeRaw * 12 : incomeRaw;
+  const tax = calculateIncomeTax(income, regime);
+
+  const otherDeductions = [
+    { category: "GST on expenses", rate: 0.06 },
+    { category: "Fuel taxes", rate: 0.04 },
+    { category: "Tolls & Road Cess", rate: 0.015 },
+    { category: "Entertainment Tax", rate: 0.01 },
+    { category: "Inflation impact", rate: 0.055 },
+    { category: "Bank & Hidden Charges", rate: 0.015 },
+    { category: "Other Cesses", rate: 0.015 },
+    { category: "Overpricing Impact", rate: 0.035 }
+  ];
+
+  let totalDeductions = tax;
+  let categoryLabels = ["Net Income"];
+  let categoryValues = [income];
+
+  tbody.innerHTML += `<tr><td>Income Tax (${regime})</td><td>₹${(period === 'monthly' ? tax/12 : tax).toFixed(2)}</td></tr>`;
+
+  otherDeductions.forEach(item => {
+    const amt = income * item.rate;
+    totalDeductions += amt;
+    tbody.innerHTML += `<tr><td>${item.category}</td><td>₹${(period === 'monthly' ? amt/12 : amt).toFixed(2)}</td></tr>`;
+    categoryLabels.push(item.category);
+    categoryValues.push(amt);
+  });
+
+  const netIncome = income - totalDeductions;
+  tbody.innerHTML += `<tr><td><strong>Total Lost</strong></td><td><strong>₹${(period === 'monthly' ? totalDeductions/12 : totalDeductions).toFixed(2)}</strong></td></tr>`;
+  tbody.innerHTML += `<tr><td><strong>Net Usable Income</strong></td><td><strong>₹${(period === 'monthly' ? netIncome/12 : netIncome).toFixed(2)}</strong></td></tr>`;
+
+  const actualSavingsAnnual = period === 'monthly' ? actualSavings * 12 : actualSavings;
+  const actualExpenseAnnual = period === 'monthly' ? actualExpenses * 12 : actualExpenses;
+  const savingsRate = (actualSavingsAnnual / income) * 100;
+
+  tbody.innerHTML += `<tr><td>Actual Savings Rate</td><td>${savingsRate.toFixed(1)}%</td></tr>`;
+  tbody.innerHTML += `<tr><td>Suggested Savings Rate</td><td>20%-30%</td></tr>`;
+
+  const ctxPie = document.getElementById('pieChart').getContext('2d');
+  const ctxBar = document.getElementById('barChart').getContext('2d');
+
+  if (window.pieChart && typeof window.pieChart.destroy === 'function') window.pieChart.destroy();
+  if (window.barChart && typeof window.barChart.destroy === 'function') window.barChart.destroy();
+
+  window.pieChart = new Chart(ctxPie, {
+    type: 'pie',
+    data: {
+      labels: ["Taxes & Losses", "Usable Income"],
+      datasets: [{
+        data: [totalDeductions, netIncome],
+        backgroundColor: ["#ff6666", "#66cc66"]
+      }]
+    }
+  });
+
+  window.barChart = new Chart(ctxBar, {
+    type: 'bar',
+    data: {
+      labels: categoryLabels.slice(1),
+      datasets: [{
+        label: "Annual Amount (₹)",
+        data: categoryValues.slice(1),
+        backgroundColor: '#3399ff'
+      }]
+    },
+    options: { scales: { y: { beginAtZero: true } } }
+  });
+}
+</script>
+</body>
+</html>
